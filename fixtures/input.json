@@ -1,0 +1,1 @@
+{"radius_km":2.0,"window_minutes":20,"observations":[{"id":"o1","sensor":"north-1","time":"2026-07-01T12:00:00+00:00","lat":37.0,"lon":-120.0,"severity":0.8},{"id":"o2","sensor":"north-2","time":"2026-07-01T12:10:00+00:00","lat":37.005,"lon":-120.0,"severity":0.6},{"id":"o3","sensor":"south-1","time":"2026-07-01T12:05:00+00:00","lat":38.0,"lon":-120.0,"severity":0.4}]}

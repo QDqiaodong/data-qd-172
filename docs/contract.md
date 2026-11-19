@@ -1,0 +1,3 @@
+# Alert aggregation contract
+
+Each observation has a unique ID, sensor ID, UTC timestamp, latitude, longitude, and severity score from 0 through 1. Two observations are adjacent when their timestamps differ by at most the configured number of minutes and haversine distance is within the configured radius. Connected components form candidate incidents; this transitive rule can create clusters whose endpoints exceed the radius. Incident ID is the lexicographically smallest observation ID. Confidence is the number of distinct sensors divided by observations, alongside the raw count. This is alert triage, not a fire boundary or emergency dispatch decision.
