@@ -16,6 +16,19 @@ def _km(a, b):
     return 6371.0088 * 2 * asin(sqrt(min(1, h)))
 
 
+def _windows(data):
+    result = []
+    for w in data.get("maintenance_windows") or []:
+        try:
+            sensor, start, end = w["sensor_id"], _time(w["start"]), _time(w["end"])
+        except KeyError as exc:
+            raise ValueError(f"maintenance window missing field: {exc}") from None
+        if start >= end:
+            raise ValueError(f"maintenance window start must be before end: {sensor!r}")
+        result.append((sensor, start, end))
+    return result
+
+
 def cluster(data):
     rows = data["observations"]
     if len({r["id"] for r in rows}) != len(rows):
@@ -29,7 +42,15 @@ def cluster(data):
         if not 0 <= float(r["severity"]) <= 1:
             raise ValueError(f"invalid severity: {r['id']}")
         _time(r["time"])
-    parent = list(range(len(rows)))
+    windows = _windows(data)
+    active, suppressed = [], []
+    for r in rows:
+        t = _time(r["time"])
+        if any(sensor == r["sensor"] and start <= t < end for sensor, start, end in windows):
+            suppressed.append(r["id"])
+        else:
+            active.append(r)
+    parent = list(range(len(active)))
 
     def root(i):
         while parent[i] != i:
@@ -37,13 +58,13 @@ def cluster(data):
             i = parent[i]
         return i
 
-    for i, a in enumerate(rows):
+    for i, a in enumerate(active):
         for j in range(i):
-            b = rows[j]
+            b = active[j]
             if abs((_time(a["time"]) - _time(b["time"])).total_seconds()) <= window * 60 and _km(a, b) <= radius:
                 parent[root(i)] = root(j)
     groups = {}
-    for i, row in enumerate(rows):
+    for i, row in enumerate(active):
         groups.setdefault(root(i), []).append(row)
     incidents = []
     for members in groups.values():
@@ -52,4 +73,5 @@ def cluster(data):
                           "sensor_count": len({r["sensor"] for r in members}), "observation_count": len(members),
                           "confidence": round(len({r["sensor"] for r in members}) / len(members), 6),
                           "mean_severity": round(sum(float(r["severity"]) for r in members) / len(members), 6)})
-    return {"incidents": sorted(incidents, key=lambda x: x["incident_id"]), "observation_count": len(rows)}
+    return {"incidents": sorted(incidents, key=lambda x: x["incident_id"]), "observation_count": len(rows),
+            "suppressed_observation_ids": sorted(suppressed)}
