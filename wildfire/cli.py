@@ -5,6 +5,7 @@ from pathlib import Path
 
 from . import archive
 from . import review
+from . import reconcile
 from .core import cluster
 
 
@@ -13,7 +14,7 @@ def main():
     subcommands = {"archive-init", "publish", "pending", "ack",
                    "review-init", "review-import", "review-current",
                    "review-todo", "review-assign", "review-conclude",
-                   "review-history"}
+                   "review-history", "reconcile"}
     if argv and argv[0] in subcommands:
         _run_subcommand(argv)
     elif argv and argv[0] in ("-h", "--help"):
@@ -91,6 +92,12 @@ def _build_parser():
                               help="show the audit trail of one case")
     rhistory.add_argument("--workbench", required=True)
     rhistory.add_argument("--case", required=True)
+
+    rec = sub.add_parser("reconcile",
+                         help="reconcile primary/backup gateway exports into "
+                              "a replayable clustering input")
+    rec.add_argument("--input", required=True)
+    rec.add_argument("--output", required=True)
     return p
 
 
@@ -139,6 +146,22 @@ def _run_subcommand(argv):
         elif args.command == "review-history":
             result = review.case_history(args.workbench, args.case)
             print(json.dumps(result, sort_keys=True))
+        elif args.command == "reconcile":
+            payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+            value = reconcile.reconcile(payload)
+            target = Path(args.output)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with target.open("x") as f:
+                json.dump(value, f, indent=2)
+                f.write("\n")
+            summary = value["reconciliation"]
+            print(json.dumps({
+                "observations": len(value["observations"]),
+                "max_duplicate_pairs": summary["max_duplicate_pairs"],
+                "included_backup_ids": [
+                    row["id"] for row in summary["backup_rows"]
+                    if row["decision"] == "included"],
+            }, sort_keys=True))
     except (OSError, ValueError, KeyError, TypeError, archive.ArchiveError,
             review.ReviewError) as exc:
         _build_parser().exit(2, f"fire-cluster: {exc}\n")

@@ -75,6 +75,31 @@ predecessor/successor links preserved. Case ids are never reused, and every
 conclusion keeps the immutable basis it was recorded against. See
 `docs/review.md` for the full workbench contract.
 
+## Reconciling primary and backup gateway exports
+
+Offline sites feed the same sensor samples to a primary and a backup
+gateway; either export may miss rows, each numbers its own rows, and the
+backup clock may carry one fixed unknown offset inside the covered clock
+section. `reconcile` finds the offsets and one-to-one pairings that explain
+the most duplicate samples, then keeps every primary row and adds only the
+backup rows that are unpaired in every optimal solution with a fixed
+corrected UTC. The product is a normal clustering payload:
+
+```sh
+fire-cluster reconcile --input gateways.json --output run/replay.json
+fire-cluster --input run/replay.json --output run/report.json
+# Inspect why a backup row was shelved instead of replayed:
+jq '.reconciliation.backup_rows[] | select(.decision == "shelved")
+    | {id, reason_code, reason}' run/replay.json
+```
+
+Shelved rows distinguish always-identical duplicates, ambiguous duplicate
+targets, rows duplicated only in some optimal solutions, and unique rows
+whose corrected UTC is still undetermined. Validation and anchor conflicts
+fail the run without writing an output file. See
+`docs/reconciliation.md` for the full contract, including the merged
+optimal-offset intervals and per-row reports.
+
 Input is synthetic. Clustering uses a configured distance and time window; it is a triage aid, not a verified fire perimeter. MIT licensed.
 
 Fixture summary: 3 observations form 2 candidate incidents.
