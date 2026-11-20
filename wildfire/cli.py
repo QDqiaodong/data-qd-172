@@ -5,6 +5,7 @@ from pathlib import Path
 
 from . import archive
 from . import coverage
+from . import location
 from . import review
 from . import reconcile
 from .core import cluster
@@ -15,7 +16,8 @@ def main():
     subcommands = {"archive-init", "publish", "pending", "ack",
                    "review-init", "review-import", "review-current",
                    "review-todo", "review-assign", "review-conclude",
-                   "review-history", "reconcile", "coverage-audit"}
+                   "review-history", "reconcile", "coverage-audit",
+                   "location-audit"}
     if argv and argv[0] in subcommands:
         _run_subcommand(argv)
     elif argv and argv[0] in ("-h", "--help"):
@@ -119,6 +121,17 @@ def _build_parser():
     audit.add_argument("--minimum-coverage", required=True, type=float,
                        help="incident threshold within [0, 1]")
     audit.add_argument("--output", required=True)
+
+    loc = sub.add_parser("location-audit",
+                         help="audit location uncertainty: separate links "
+                              "that hold under every allowed true position "
+                              "from links that only hold for some allowed "
+                              "positions")
+    loc.add_argument("--input", required=True,
+                     help="full observation JSON (same shape as --input, "
+                          "with optional per-observation "
+                          "location_uncertainty_m)")
+    loc.add_argument("--output", required=True)
     return p
 
 
@@ -202,6 +215,20 @@ def _run_subcommand(argv):
                 "coverage": value["coverage"]["coverage_ratio"],
                 "eligible_slots": value["coverage"]["eligible_slots"],
                 "missing_slots": value["coverage"]["missing_slots"],
+            }, sort_keys=True))
+        elif args.command == "location-audit":
+            data = json.loads(Path(args.input).read_text(encoding="utf-8"))
+            value = location.audit_location(data)
+            target = Path(args.output)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with target.open("x") as f:
+                json.dump(value, f, indent=2, sort_keys=True)
+                f.write("\n")
+            print(json.dumps({
+                "observations": value["cluster_report"]["observation_count"],
+                "incidents": len(value["cluster_report"]["incidents"]),
+                "certain_components": len(value["certain_components"]),
+                "possible_components": len(value["possible_components"]),
             }, sort_keys=True))
     except (OSError, ValueError, KeyError, TypeError, archive.ArchiveError,
             review.ReviewError) as exc:

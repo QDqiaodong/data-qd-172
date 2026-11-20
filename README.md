@@ -132,6 +132,40 @@ the intersection of the audit window with its
 without writing output. See `docs/coverage.md` for the full contract and
 output field reference.
 
+## Auditing location uncertainty
+
+Clustering links observations by their reported coordinates, so with
+low-accuracy fixes an incident may hinge on links that only exist inside
+the measurement-error margins. `location-audit` separates links that
+hold under *every* allowed true position from links that merely *may*
+hold, without changing clustering, incident membership, ids, confidence
+or mean severity.
+
+```sh
+fire-cluster location-audit \
+  --input observations.json \
+  --output run/location-audit.json
+```
+
+Each observation may carry `location_uncertainty_m`, a hard radius in
+meters within which its true position is guaranteed to lie (default 0;
+non-numeric, non-finite or negative values are rejected). For every
+unsuppressed pair inside the existing `window_minutes` time window, with
+great-circle distance `d` between the reported coordinates and combined
+uncertainty `u` (km): the link is *certain* when
+`d + u <= radius_km`, *possible* when `d <= radius_km + u`, and
+impossible otherwise; both boundaries are inclusive. The report embeds
+the unmodified cluster report and adds the connected components of the
+certain graph (stable cores that stay linked for all allowed positions)
+and of the possible graph (a conservative envelope: membership means a
+chain cannot be ruled out, not that one is simultaneously realizable).
+Every certain component lies inside one incident and every incident
+inside one possible component, so the audit annotates the robustness of
+each event without ever replacing it. Maintenance-suppressed
+observations take no part, component ids are the smallest member
+observation id, and reordering the input cannot change the output. See
+`docs/location.md` for the full contract and output field reference.
+
 Input is synthetic. Clustering uses a configured distance and time window; it is a triage aid, not a verified fire perimeter. MIT licensed.
 
 Fixture summary: 3 observations form 2 candidate incidents.
