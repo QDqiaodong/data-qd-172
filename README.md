@@ -100,6 +100,38 @@ fail the run without writing an output file. See
 `docs/reconciliation.md` for the full contract, including the merged
 optimal-offset intervals and per-row reports.
 
+## Auditing sampling coverage
+
+Clustering can only group observations that arrived; a quiet interval and
+a silent sensor look identical. `coverage-audit` compares the full
+observation set against a per-sensor sampling plan and attaches an
+explainable evidence-completeness verdict to every candidate incident
+without changing clustering, incident membership, ids, confidence or mean
+severity.
+
+```sh
+fire-cluster coverage-audit \
+  --input observations.json \
+  --schedule sampling-plan.json \
+  --start 2026-07-01T00:00:00Z --end 2026-07-02T00:00:00Z \
+  --tolerance-seconds 60 --minimum-coverage 0.9 \
+  --output run/coverage.json
+```
+
+A plan entry registers `active_start`, `active_end`, `cadence_seconds`
+and `phase` per `sensor_id`; slots are `phase + k * cadence_seconds`
+inside both the deployment interval and the half-open audit window. The
+tolerance must stay strictly below half of every cadence. Maintenance
+windows turn intersecting slots into planned outages excluded from the
+denominator, and maintenance-suppressed readings never count as samples.
+Readings that match no slot are reported separately as `off_schedule`,
+and every covered slot traces back to its observation id. Each incident
+gets a `sufficient`, `incomplete` or `no_expected_samples` verdict over
+the intersection of the audit window with its
+`[first, last + 1 microsecond)` event range. Validation failures exit 2
+without writing output. See `docs/coverage.md` for the full contract and
+output field reference.
+
 Input is synthetic. Clustering uses a configured distance and time window; it is a triage aid, not a verified fire perimeter. MIT licensed.
 
 Fixture summary: 3 observations form 2 candidate incidents.

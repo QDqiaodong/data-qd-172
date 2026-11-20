@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 from . import archive
+from . import coverage
 from . import review
 from . import reconcile
 from .core import cluster
@@ -14,7 +15,7 @@ def main():
     subcommands = {"archive-init", "publish", "pending", "ack",
                    "review-init", "review-import", "review-current",
                    "review-todo", "review-assign", "review-conclude",
-                   "review-history", "reconcile"}
+                   "review-history", "reconcile", "coverage-audit"}
     if argv and argv[0] in subcommands:
         _run_subcommand(argv)
     elif argv and argv[0] in ("-h", "--help"):
@@ -98,6 +99,26 @@ def _build_parser():
                               "a replayable clustering input")
     rec.add_argument("--input", required=True)
     rec.add_argument("--output", required=True)
+
+    audit = sub.add_parser("coverage-audit",
+                           help="audit planned sampling coverage and attach "
+                                "an evidence-completeness verdict to each "
+                                "candidate incident")
+    audit.add_argument("--input", required=True,
+                       help="full observation JSON (same shape as --input)")
+    audit.add_argument("--schedule", required=True,
+                       help="sampling plan JSON with per-sensor active "
+                            "window, cadence and phase")
+    audit.add_argument("--start", required=True,
+                       help="audit window start, inclusive (UTC offset)")
+    audit.add_argument("--end", required=True,
+                       help="audit window end, exclusive (UTC offset)")
+    audit.add_argument("--tolerance-seconds", required=True, type=int,
+                       help="must be strictly below half of every planned "
+                            "cadence_seconds")
+    audit.add_argument("--minimum-coverage", required=True, type=float,
+                       help="incident threshold within [0, 1]")
+    audit.add_argument("--output", required=True)
     return p
 
 
@@ -161,6 +182,26 @@ def _run_subcommand(argv):
                 "included_backup_ids": [
                     row["id"] for row in summary["backup_rows"]
                     if row["decision"] == "included"],
+            }, sort_keys=True))
+        elif args.command == "coverage-audit":
+            data = json.loads(Path(args.input).read_text(encoding="utf-8"))
+            schedule = json.loads(
+                Path(args.schedule).read_text(encoding="utf-8"))
+            value = coverage.audit_coverage(
+                data, schedule, start=args.start, end=args.end,
+                tolerance_seconds=args.tolerance_seconds,
+                minimum_coverage=args.minimum_coverage)
+            target = Path(args.output)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with target.open("x") as f:
+                json.dump(value, f, indent=2)
+                f.write("\n")
+            print(json.dumps({
+                "observations": value["cluster_report"]["observation_count"],
+                "incidents": len(value["incidents"]),
+                "coverage": value["coverage"]["coverage_ratio"],
+                "eligible_slots": value["coverage"]["eligible_slots"],
+                "missing_slots": value["coverage"]["missing_slots"],
             }, sort_keys=True))
     except (OSError, ValueError, KeyError, TypeError, archive.ArchiveError,
             review.ReviewError) as exc:
