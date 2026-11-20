@@ -4,12 +4,16 @@ import sys
 from pathlib import Path
 
 from . import archive
+from . import review
 from .core import cluster
 
 
 def main():
     argv = sys.argv[1:]
-    subcommands = {"archive-init", "publish", "pending", "ack"}
+    subcommands = {"archive-init", "publish", "pending", "ack",
+                   "review-init", "review-import", "review-current",
+                   "review-todo", "review-assign", "review-conclude",
+                   "review-history"}
     if argv and argv[0] in subcommands:
         _run_subcommand(argv)
     elif argv and argv[0] in ("-h", "--help"):
@@ -43,6 +47,50 @@ def _build_parser():
     ack.add_argument("--archive", required=True)
     ack.add_argument("--consumer", required=True)
     ack.add_argument("--record", required=True)
+
+    rinit = sub.add_parser("review-init", help="create a local review workbench")
+    rinit.add_argument("--workbench", required=True)
+
+    rimport = sub.add_parser("review-import",
+                             help="import the full current observation set")
+    rimport.add_argument("--workbench", required=True)
+    rimport.add_argument("--input", required=True)
+
+    rcurrent = sub.add_parser("review-current",
+                              help="list active review cases")
+    rcurrent.add_argument("--workbench", required=True)
+
+    rtodo = sub.add_parser("review-todo",
+                           help="list active cases still needing review")
+    rtodo.add_argument("--workbench", required=True)
+    todo_filter = rtodo.add_mutually_exclusive_group()
+    todo_filter.add_argument("--owner", help="only cases owned by this id")
+    todo_filter.add_argument("--unassigned", action="store_true",
+                             help="only cases without an owner")
+
+    rassign = sub.add_parser("review-assign",
+                             help="assign the owner of a pending case")
+    rassign.add_argument("--workbench", required=True)
+    rassign.add_argument("--case", required=True)
+    rassign.add_argument("--expected-revision", required=True, type=int)
+    rassign.add_argument("--actor", required=True)
+    rassign.add_argument("--owner", required=True)
+    rassign.add_argument("--reason", required=True)
+
+    rconclude = sub.add_parser("review-conclude",
+                               help="record a human conclusion for a case")
+    rconclude.add_argument("--workbench", required=True)
+    rconclude.add_argument("--case", required=True)
+    rconclude.add_argument("--expected-revision", required=True, type=int)
+    rconclude.add_argument("--actor", required=True)
+    rconclude.add_argument("--verdict", required=True,
+                           choices=sorted(review.VERDICTS))
+    rconclude.add_argument("--note", required=True)
+
+    rhistory = sub.add_parser("review-history",
+                              help="show the audit trail of one case")
+    rhistory.add_argument("--workbench", required=True)
+    rhistory.add_argument("--case", required=True)
     return p
 
 
@@ -63,7 +111,36 @@ def _run_subcommand(argv):
         elif args.command == "ack":
             result = archive.acknowledge(args.archive, args.consumer, args.record)
             print(json.dumps(result, sort_keys=True))
-    except (OSError, ValueError, KeyError, TypeError, archive.ArchiveError) as exc:
+        elif args.command == "review-init":
+            result = review.init_workbench(args.workbench)
+            print(json.dumps(result, sort_keys=True))
+        elif args.command == "review-import":
+            payload = json.loads(Path(args.input).read_text(encoding="utf-8"))
+            receipt = review.import_observations(args.workbench, payload)
+            print(json.dumps(receipt, sort_keys=True))
+        elif args.command == "review-current":
+            print(json.dumps(review.current_cases(args.workbench),
+                             sort_keys=True))
+        elif args.command == "review-todo":
+            cases = review.todo_cases(args.workbench, owner=args.owner,
+                                      unassigned=args.unassigned)
+            print(json.dumps(cases, sort_keys=True))
+        elif args.command == "review-assign":
+            result = review.assign_owner(args.workbench, args.case,
+                                         args.expected_revision, args.actor,
+                                         args.owner, args.reason)
+            print(json.dumps(result, sort_keys=True))
+        elif args.command == "review-conclude":
+            result = review.submit_conclusion(args.workbench, args.case,
+                                              args.expected_revision,
+                                              args.actor, args.verdict,
+                                              args.note)
+            print(json.dumps(result, sort_keys=True))
+        elif args.command == "review-history":
+            result = review.case_history(args.workbench, args.case)
+            print(json.dumps(result, sort_keys=True))
+    except (OSError, ValueError, KeyError, TypeError, archive.ArchiveError,
+            review.ReviewError) as exc:
         _build_parser().exit(2, f"fire-cluster: {exc}\n")
 
 

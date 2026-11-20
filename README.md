@@ -41,6 +41,40 @@ original receipt without allocating new identities; the same `batch_id` with
 different input is rejected, and invalid clustering input leaves the archive
 untouched. See `docs/publishing.md` for the full archive contract.
 
+## Human review workbench
+
+Offline analysts confirm or dismiss candidate incidents in a separate local
+workbench file; dashboard acknowledgements never count as review
+conclusions. The workbench reads the same full observation JSON directly
+(no archive batch required) and reuses the same clustering and
+maintenance-window rules.
+
+```sh
+# Create the workbench and import the complete current observation set.
+fire-cluster review-init --workbench run/workbench.json
+fire-cluster review-import --workbench run/workbench.json --input fixtures/input.json
+
+# Claim the next pending case, then record the human conclusion.
+fire-cluster review-todo --workbench run/workbench.json --unassigned
+fire-cluster review-assign --workbench run/workbench.json --case c1 \
+    --expected-revision 1 --actor lead --owner analyst-a --reason "triage rotation"
+fire-cluster review-conclude --workbench run/workbench.json --case c1 \
+    --expected-revision 2 --actor analyst-a --verdict confirmed \
+    --note "two north sensors concur"
+
+# Active cases (concluded or not) and per-case audit trails stay queryable.
+fire-cluster review-current --workbench run/workbench.json
+fire-cluster review-history --workbench run/workbench.json --case c1
+```
+
+Each import replaces the full observation set and reconciles review cases:
+one-to-one linked incidents keep their `case_id` (a changed review basis
+reopens the case for its owner), while merges, splits, and
+cross-reorganizations retire the old cases and create fresh ones with all
+predecessor/successor links preserved. Case ids are never reused, and every
+conclusion keeps the immutable basis it was recorded against. See
+`docs/review.md` for the full workbench contract.
+
 Input is synthetic. Clustering uses a configured distance and time window; it is a triage aid, not a verified fire perimeter. MIT licensed.
 
 Fixture summary: 3 observations form 2 candidate incidents.
